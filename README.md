@@ -10,10 +10,10 @@ usando GitHub Actions + Google Sheets como base de datos de usuarios.
 
 1. Los alumnos completan un **Google Form** con su email/contraseña de TurnosWeb y horario preferido
 2. Las respuestas se guardan automáticamente en una **Google Sheet**
-3. Todos los días a las 00:01 ART, un script en **GitHub Actions**:
-   - Lee la Sheet
-   - Para cada alumno: hace login en Gonnet Box, busca su clase del día siguiente y la reserva
-4. Al final muestra un resumen con el estado de cada alumno
+3. Todos los días a las **00:01 ART** (domingo a viernes), un workflow de **GitHub Actions**:
+   - Lee la Sheet usando una **Service Account** de Google Cloud
+   - Para cada fila/alumno: hace login en Gonnet Box, busca su clase del día siguiente **a la hora que cada uno eligió**, y la reserva
+4. Al final muestra un resumen con el estado de cada alumno (✅ / ❌)
 
 ---
 
@@ -31,182 +31,161 @@ spreadsheets-form-reserva-gym/
 
 ---
 
-## Setup paso a paso
+## Setup completo (flujo que se siguió)
 
 ### 1. Crear el Google Form
 
-1. Ir a **forms.google.com** → formulario nuevo
-2. Agregar estas preguntas (los nombres deben coincidir exactamente con las columnas que lee el script):
-   - **Nombre completo** (texto corto)
-   - **Email de TurnosWeb** (texto corto)
-   - **Contraseña de TurnosWeb** (texto corto)
-   - **Hora de clase preferida** (desplegable, ej: `08:00`, `09:00`, `17:00`, `19:00`)
-3. En el formulario, pestaña **Respuestas** → ícono verde de Sheets → **Crear hoja de cálculo**
-4. Anotá el nombre exacto que le pusiste a esa Sheet — lo vas a necesitar más adelante (por defecto se llama algo como "Respuestas Reserva Gym (Respuestas)")
+1. **forms.google.com** → formulario nuevo
+2. Preguntas (texto corto, salvo la última que es desplegable):
+   - Nombre completo
+   - Email de TurnosWeb
+   - Contraseña de TurnosWeb
+   - Hora de clase (ej: `8:00`, `09:00`, `17:00`, `19:00`)
+3. Pestaña **Respuestas** → ícono de Sheets → **Crear hoja de cálculo**
+4. Esa Sheet se va llenando sola con cada respuesta
 
-> ⚠️ Cada alumno te está dando su contraseña real del gym. Aclará en la descripción del formulario qué uso le das a esos datos.
-
----
-
-### 2. Crear proyecto en Google Cloud
-
-1. Ir a **console.cloud.google.com**
-2. Arriba a la izquierda, click en el selector de proyecto → **Proyecto nuevo**
-3. Nombre: `gym-reserva-multi` → **Crear**
-4. Una vez creado, seleccionalo desde el mismo selector de proyecto
+> El script reconoce las columnas aunque tengan espacios extra o el texto varíe levemente (ej: "Hora de clase" en vez de "Hora de clase preferida") — hace matching flexible ignorando mayúsculas y espacios.
 
 ---
 
-### 3. Habilitar la API de Google Sheets
+### 2. Google Cloud — proyecto, API y Service Account
 
-1. Menú lateral (☰) → **APIs y servicios → Biblioteca**
-2. Buscar **Google Sheets API** → **Habilitar**
-
----
-
-### 4. Crear la Service Account
-
-1. Menú lateral → **APIs y servicios → Credenciales**
-2. **Crear credenciales → Cuenta de servicio**
-3. Completar:
-   - **Nombre de la cuenta de servicio**: `gym-reserva-sheets-reader`
-   - **Descripción**: `Lee la Google Sheet de usuarios para el script de reserva del gym`
-4. **Crear y continuar**
-5. Paso de permisos → dejar vacío → **Continuar**
-6. Paso de principales con acceso → dejar vacío → **Listo**
-
-> El aviso de "configurar la pantalla de consentimiento de OAuth" se puede ignorar — no aplica a este caso, porque la service account no le pide permiso a otros usuarios, solo accede a la Sheet que vos le compartís directamente.
-
-7. En la lista de cuentas de servicio, copiá el email generado (formato `nombre@gym-reserva-multi.iam.gserviceaccount.com`)
+1. **console.cloud.google.com** → crear proyecto (ej: `gym-reserva-multi`)
+2. **APIs y servicios → Biblioteca** → buscar **Google Sheets API** → **Habilitar**
+3. **APIs y servicios → Credenciales → Crear credenciales → Cuenta de servicio**
+   - Nombre: `gym-reserva-sheets-reader`
+4. Click en la cuenta creada → pestaña **Claves → Agregar clave → Crear clave nueva → JSON**
+5. Se descarga un `.json` con las credenciales — **nunca subir este archivo al repo**
 
 ---
 
-### 5. Generar la clave JSON
+### 3. Compartir la Sheet con la Service Account
 
-1. Click en la cuenta de servicio recién creada
-2. Pestaña **Claves (Keys)** → **Agregar clave → Crear clave nueva**
-3. Tipo: **JSON** → **Crear**
-4. Se descarga un archivo `.json` — **guardalo en un lugar seguro, no lo subas nunca al repo**
+1. Abrí el `.json` descargado, copiá el valor de `client_email`
+2. En la Google Sheet → **Compartir** → pegar ese email → rol **Lector**
 
 ---
 
-### 6. Compartir la Google Sheet con la Service Account
+### 4. Obtener el ID de la Sheet
 
-1. Abrí la Google Sheet de respuestas del Form
-2. Botón **Compartir**
-3. Pegá el email de la service account (el que copiaste en el paso 4)
-4. Rol: **Lector**
-5. **Enviar** (puede tirar un aviso de que es una cuenta externa — es esperado, confirmá)
+El ID es la parte de la URL entre `/d/` y `/edit`:
 
----
-
-### 7. Crear el repositorio en GitHub
-
-1. **+ → New repository**
-2. Nombre: `spreadsheets-form-reserva-gym`
-3. Visibility: ✅ **Private**
-4. ✅ **Add a README file**
-5. **Create repository**
-
----
-
-### 8. Crear los archivos del repo
-
-#### `reservar.py`
-**Add file → Create new file** → nombre `reservar.py` → pegar el contenido del script (incluido en este proyecto) → **Commit changes**
-
-#### `requirements.txt`
-**Add file → Create new file** → nombre `requirements.txt` → contenido:
 ```
-requests==2.32.3
-pytz==2024.1
-gspread==6.1.2
-google-auth==2.29.0
+https://docs.google.com/spreadsheets/d/ESTE_ES_EL_ID/edit
 ```
-**Commit changes**
-
-#### `.github/workflows/reserva.yml`
-**Add file → Create new file** → nombre exacto `.github/workflows/reserva.yml` → pegar el contenido del workflow → **Commit changes**
 
 ---
 
-### 9. Cargar los secrets en GitHub
+### 5. Cargar los secrets en GitHub
 
 En el repo → **Settings → Secrets and variables → Actions → New repository secret**
 
 | Name | Valor |
 |---|---|
-| `GOOGLE_CREDENTIALS` | Todo el contenido del archivo `.json` descargado en el paso 5 |
-| `SHEET_NAME` | El nombre exacto de la Google Sheet (paso 1.4) |
+| `GOOGLE_CREDENTIALS` | Contenido completo del archivo `.json` de la Service Account |
+| `SHEET_ID` | El ID de la Sheet (paso 4) |
+
+> Se usa el **ID** y no el nombre de la Sheet (`open_by_key`) para no depender de la API de Google Drive — con permisos solo de Sheets alcanza.
 
 ---
 
-### 10. Probar manualmente
+### 6. Workflow de GitHub Actions
 
-1. Pestaña **Actions** → **Reserva Gym Diaria (Multi-Usuario via Sheets)** → **Run workflow**
-2. Click en el run para ver el log
+`.github/workflows/reserva.yml` corre automáticamente:
 
-Log esperado:
+```yaml
+on:
+  schedule:
+    - cron: "1 3 * * 0-5"   # 00:01 ART (UTC-3), domingo a viernes
+  workflow_dispatch:
 ```
-👥 4 usuarios cargados desde la Sheet
+
+- **Automático**: todos los días domingo a viernes a las 00:01 ART
+- **Manual**: pestaña **Actions → Reserva Gym Diaria (Multi-Usuario via Sheets) → Run workflow**
+
+---
+
+## Variables y columnas reconocidas
+
+### En `reservar.py`
+
+| Constante | Descripción |
+|---|---|
+| `AGENDA` | ID del box en TurnosWeb (`0_227_0`, fijo para Gonnet Box) |
+| `SHEET_ID` | Viene del secret, identifica la Google Sheet |
+| `COL_NOMBRE`, `COL_EMAIL`, `COL_PASS`, `COL_HORA` | Nombres "ideales" de columna — el matching es flexible y también acepta variantes |
+
+### Formato de la hora en el Form
+Acepta `"8:00"`, `"08:00"` o `"080000"` — el script normaliza todo a formato `HHMMSS` internamente.
+
+### Columnas — variantes aceptadas
+| Dato | Nombres que reconoce |
+|---|---|
+| Nombre | "Nombre completo", "Nombre" |
+| Email | "Email de TurnosWeb", "Email", "Correo" |
+| Contraseña | "Contraseña de TurnosWeb", "Contraseña", "Password" |
+| Hora | "Hora de clase preferida", "Hora de clase", "Hora" |
+
+---
+
+## Agregar, editar o quitar alumnos
+
+No hace falta tocar código ni secrets — todo se gestiona desde la Sheet:
+- **Agregar**: el alumno completa el Form (o se agrega una fila manual)
+- **Quitar**: borrar su fila en la Sheet
+- **Cambiar horario**: editar el valor de la columna de hora en la Sheet
+
+El script lee la Sheet entera en cada ejecución, así que los cambios se aplican esa misma noche.
+
+---
+
+## Probar manualmente
+
+1. **Actions → Reserva Gym Diaria (Multi-Usuario via Sheets) → Run workflow**
+2. Click en el run → expandir el paso **"Ejecutar reserva"**
+
+Log esperado con usuarios reales:
+```
+👥 2 usuarios cargados desde la Sheet
 
 [Alumno Uno] --- Procesando usuario ---
 [Alumno Uno] ✅ Login OK — Nombre Apellido
-[Alumno Uno] 📋 7 clases encontradas para 20260527
-[Alumno Uno] 🎯 Clase encontrada: Mié 27 08:00 — Crossfit / Functional (lugares: 14)
-[Alumno Uno] ✅ Reserva confirmada: Mié 27 08:00 — Crossfit / Functional
+[Alumno Uno] 📋 7 clases encontradas para 20260626
+[Alumno Uno] 🎯 Clase encontrada: Vie 26 08:00 — Crossfit / Functional (lugares: 14)
+[Alumno Uno] ✅ Reserva confirmada: Vie 26 08:00 — Crossfit / Functional
+
+[Alumno Dos] --- Procesando usuario ---
+...
 
 === Resumen ===
 ✅ Alumno Uno
 ✅ Alumno Dos
 ```
 
----
-
-## Variables y columnas configurables
-
-### En `reservar.py`
-
-| Constante | Descripción |
-|---|---|
-| `SHEET_NAME` | Nombre de la Sheet (se puede pasar por variable de entorno) |
-| `COL_NOMBRE`, `COL_EMAIL`, `COL_PASS`, `COL_HORA` | Deben coincidir EXACTO con los títulos de columna que generó el Form |
-| `AGENDA` | ID del box en TurnosWeb (`0_227_0`, fijo para Gonnet Box) |
-
-### Formato de la hora en el Form
-El script acepta tanto `"08:00"` como `"080000"` en la columna de hora — los convierte automáticamente.
+Si una fila está incompleta (faltan datos), se omite con un aviso y no frena al resto.
 
 ---
 
-## Agregar o quitar alumnos
+## Relación con el otro repo (`gym-reserva`)
 
-No hace falta tocar código ni secrets. Simplemente:
-- **Agregar**: el alumno completa el Form de nuevo (o vos agregás una fila manual en la Sheet)
-- **Quitar**: borrar su fila en la Sheet
-- **Cambiar horario**: editar el valor de la columna "Hora de clase preferida" en la Sheet
-
-El script lee la Sheet entera en cada ejecución, así que los cambios se aplican automáticamente esa misma noche.
-
----
-
-## Horario del cron
-
-| Cron | Días que corre | Reserva el día |
+| Repo | Para quién | Horario de reserva |
 |---|---|---|
-| `1 3 * * 0-5` | Domingo a viernes ✅ | Lunes a sábado |
-| `1 3 * * 1-5` | Lunes a viernes | Martes a sábado |
+| `gym-reserva` | Uso individual propio | Siempre 08:00, hardcodeado |
+| `spreadsheets-form-reserva-gym` | Multi-usuario | Cada alumno define su propia hora en el Form |
+
+Ambos corren con el mismo cron (00:01 ART), son independientes entre sí y no interfieren.
 
 ---
 
 ## Seguridad y consideraciones
 
-- Las contraseñas de los alumnos quedan guardadas en texto plano en la Google Sheet. Restringí el acceso a la Sheet solo a vos.
-- Recomendá a los alumnos no reutilizar contraseñas sensibles para esta cuenta del gym.
-- Avisale al gym/box que estás ofreciendo este servicio antes de automatizar logins masivos, para evitar que el proveedor de TurnosWeb lo confunda con actividad sospechosa.
-- El archivo JSON de la service account nunca debe subirse al repo — solo vive como secret de GitHub.
+- Las contraseñas de los alumnos quedan en texto plano en la Sheet — restringir el acceso solo a quien administra el servicio.
+- Recomendarles a los alumnos no reutilizar contraseñas sensibles en esta cuenta del gym.
+- Avisarle al gym/box sobre este servicio, para que no confunda logins automáticos masivos con actividad sospechosa.
+- El `.json` de la Service Account vive únicamente como secret de GitHub, nunca en el código del repo.
 
 ---
 
 ## Consumo de GitHub Actions
 
-Con ~15-20 usuarios, cada ejecución tarda unos 2-3 minutos. Corriendo todos los días, el consumo mensual es de aproximadamente 60-90 minutos — muy por debajo del límite gratuito de 2.000 minutos/mes.
+Con ~15-20 usuarios, cada ejecución tarda unos 2-3 minutos. Corriendo todos los días, el consumo mensual estimado es de 60-90 minutos — muy por debajo del límite gratuito de 2.000 minutos/mes (~33 horas).
