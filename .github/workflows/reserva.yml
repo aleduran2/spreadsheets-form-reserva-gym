@@ -27,5 +27,5 @@ jobs:
       - name: Ejecutar reserva
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-          SHEET_NAME: ${{ secrets.SHEET_NAME }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
         run: python reservar.py

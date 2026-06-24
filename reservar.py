@@ -18,8 +18,9 @@ BASE_URL  = "https://gonnetbox.turnosweb.com"
 AGENDA    = "0_227_0"
 TIMEZONE  = pytz.timezone("America/Argentina/Buenos_Aires")
 
-# Nombre exacto de la Google Sheet (la que se generó desde el Form)
-SHEET_NAME = os.environ.get("SHEET_NAME", "Respuestas Reserva Gym")
+# ID de la Google Sheet (lo que aparece en la URL entre /d/ y /edit)
+# Ej: https://docs.google.com/spreadsheets/d/ESTE_ES_EL_ID/edit
+SHEET_ID = os.environ.get("SHEET_ID", "")
 
 # Nombres exactos de las columnas tal como las generó el Google Form
 COL_NOMBRE = "Nombre completo"
@@ -73,11 +74,14 @@ def cargar_usuarios_desde_sheet() -> list:
     )
     gc = gspread.authorize(creds)
 
+    if not SHEET_ID:
+        log("❌ Secret SHEET_ID no encontrado")
+        sys.exit(1)
+
     try:
-        sheet = gc.open(SHEET_NAME).sheet1
-    except gspread.SpreadsheetNotFound:
-        log(f"❌ No se encontró la Sheet '{SHEET_NAME}'. "
-            f"Verificá el nombre y que esté compartida con la service account.")
+        sheet = gc.open_by_key(SHEET_ID).sheet1
+    except gspread.exceptions.APIError as e:
+        log(f"❌ Error abriendo la Sheet (ID='{SHEET_ID}'): {e}")
         sys.exit(1)
 
     filas = sheet.get_all_records()
