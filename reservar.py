@@ -61,6 +61,19 @@ def hora_a_codigo(hora_texto: str) -> str:
 
 
 # ── Carga de usuarios desde Google Sheets ──────────────────────────────────────
+def _normalizar(txt: str) -> str:
+    return txt.strip().lower()
+
+def _buscar_valor(fila: dict, posibles_nombres: list) -> str:
+    """Busca el valor de una columna probando varias variantes de nombre,
+    ignorando mayúsculas/minúsculas y espacios extra al inicio/final."""
+    fila_normalizada = {_normalizar(k): v for k, v in fila.items()}
+    for nombre in posibles_nombres:
+        valor = fila_normalizada.get(_normalizar(nombre))
+        if valor is not None and str(valor).strip():
+            return str(valor).strip()
+    return ""
+
 def cargar_usuarios_desde_sheet() -> list:
     raw = os.environ.get("GOOGLE_CREDENTIALS")
     if not raw:
@@ -87,10 +100,10 @@ def cargar_usuarios_desde_sheet() -> list:
     filas = sheet.get_all_records()
     usuarios = []
     for fila in filas:
-        nombre = str(fila.get(COL_NOMBRE, "")).strip()
-        email = str(fila.get(COL_EMAIL, "")).strip()
-        password = str(fila.get(COL_PASS, "")).strip()
-        hora_raw = str(fila.get(COL_HORA, "")).strip()
+        nombre   = _buscar_valor(fila, [COL_NOMBRE, "Nombre completo", "Nombre"])
+        email    = _buscar_valor(fila, [COL_EMAIL, "Email de TurnosWeb", "Email", "Correo"])
+        password = _buscar_valor(fila, [COL_PASS, "Contraseña de TurnosWeb", "Contraseña", "Password"])
+        hora_raw = _buscar_valor(fila, [COL_HORA, "Hora de clase preferida", "Hora de clase", "Hora"])
 
         if not (nombre and email and password and hora_raw):
             log(f"⚠️  Fila incompleta, se omite: {fila}")
